@@ -23,6 +23,16 @@ Key Features Covered:
  • Theming & Zoom: Support for Light/Dark modes and canvas scaling/zooming.
 
 
- Check it out you YouTube
- 
+Check it out you YouTube
+
+Working with bjl/json files 
 https://youtu.be/rcZyxrIkUws
+
+Working with bal/json files
+https://youtu.be/dR_vSB-Vifg
+
+b4x blog posts
+
+https://www.b4x.com/android/forum/threads/sithasobal-json-editor-webapp.170310/
+
+https://www.b4x.com/android/forum/threads/web-sithasobjl-json-editor-webapp.170297/
