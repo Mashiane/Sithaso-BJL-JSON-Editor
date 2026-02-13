@@ -1292,9 +1292,11 @@ class SithasoBJLDesigner extends HTMLElement {
 
   _autoSave() {
     if (!this._engine) return;
+    const layout = this._engine.getLayout();
     const state = {
       filename: this._currentFilename,
-      data: this._engine.getLayout().Data,
+      data: layout.Data,
+      variants: Array.isArray(layout.Variants) ? layout.Variants : [],
     };
     localStorage.setItem("bjl_draft", JSON.stringify(state));
 
@@ -1323,15 +1325,22 @@ class SithasoBJLDesigner extends HTMLElement {
     if (!draft || !this._engine) return;
 
     try {
-      const { filename, data } = JSON.parse(draft);
-      this._currentFilename = filename;
-      this._engine.getLayout().Data = data;
+      const { filename, data, variants } = JSON.parse(draft);
+      this._currentFilename = filename || "layout.bjl";
+
+      const layout = this._engine.getLayout();
+      if (data && typeof data === "object") {
+        layout.Data = data;
+      }
+      if (Array.isArray(variants) && variants.length > 0) {
+        layout.Variants = variants;
+      }
+      this._syncEngineVariantBoundsFromLayout();
 
       const titleEl = this.querySelector("#toolbarTitle");
       if (titleEl) titleEl.innerText = this._currentFilename;
 
-      this.updateWorkspace();
-      this._updateOutline();
+      this.refresh();
     } catch (e) {
       console.error("Failed to restore draft:", e);
     }
