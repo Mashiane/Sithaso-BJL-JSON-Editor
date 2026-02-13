@@ -468,10 +468,13 @@ class SithasoLayoutEngine {
         this.innerMargin = options.innerMargin !== undefined ? options.innerMargin : 5;
         this.defaultWidth = options.defaultWidth || 100;
         this.defaultHeight = options.defaultHeight || 60;
-        this.variantWidth = options.variantWidth || 600;
-        this.variantHeight = options.variantHeight || 600;
+        this.variantWidth = Number(options.variantWidth) > 0 ? Number(options.variantWidth) : 600;
+        this.variantHeight = Number(options.variantHeight) > 0 ? Number(options.variantHeight) : 600;
         this.TYPE_CODES = TYPE_CODES;
         this.layout = bjlJson || this.newLayout();
+        if (bjlJson) {
+            this.syncVariantBoundsFromLayout(bjlJson);
+        }
         this.schemas = {};
     }
 
@@ -499,6 +502,7 @@ class SithasoLayoutEngine {
     async loadURL(url) {
         const converter = new BJLConverter();
         this.layout = await converter.convertBjlToJsonFromURL(url);
+        this.syncVariantBoundsFromLayout();
         return this.layout;
     }
 
@@ -508,7 +512,20 @@ class SithasoLayoutEngine {
     async loadFile(file) {
         const converter = new BJLConverter();
         this.layout = await converter.convertBjlToJsonFromFile(file);
+        this.syncVariantBoundsFromLayout();
         return this.layout;
+    }
+
+    syncVariantBoundsFromLayout(layout = this.layout) {
+        const variants = layout && Array.isArray(layout.Variants) ? layout.Variants : [];
+        const variant0 = variants[0] || null;
+        const width = Number(variant0 && variant0.Width);
+        const height = Number(variant0 && variant0.Height);
+
+        if (Number.isFinite(width) && width > 0) this.variantWidth = width;
+        if (Number.isFinite(height) && height > 0) this.variantHeight = height;
+
+        return { width: this.variantWidth, height: this.variantHeight };
     }
 
     /**
@@ -591,8 +608,6 @@ class SithasoLayoutEngine {
         
         // Merge flattened overrides
         Object.assign(props, overrides);
-        // B4X layouts use ParentID for logical nesting, but components are often siblings on the Main pane
-        props.ParentID = (parentName === "Main" ? "" : (parentName || ""));
 
         return {
             csType: "Dbasic.Designer.MetaCustomView",
@@ -667,13 +682,41 @@ class SithasoLayoutEngine {
 
         const view = this._createView(componentNameOrDef, name, parentName, finalOverrides);
         
-        // Find logical siblings (those with the same logical parent)
         const allViews = Object.values(this.layout.Data[':kids'] || {});
-        // Logical siblings have the same ParentID (empty or specified)
-        const targetParentID = (parentName === "Main" ? "" : parentName);
-        const siblings = allViews.filter(v => 
-            v.customProperties && v.customProperties.ParentID === targetParentID
-        );
+        const parentComp = parentName !== "Main"
+            ? this._findView(this.layout.Data, parentName)
+            : null;
+
+        const isStrictlyInside = (innerView, outerView) => {
+            if (!innerView?.variant0 || !outerView?.variant0) return false;
+            const inner = innerView.variant0;
+            const outer = outerView.variant0;
+            return (
+                inner.left > outer.left &&
+                inner.top > outer.top &&
+                inner.left + inner.width < outer.left + outer.width &&
+                inner.top + inner.height < outer.top + outer.height
+            );
+        };
+
+        const getDirectChildren = (containerView) => {
+            const inside = allViews.filter(v =>
+                v.name !== containerView.name && isStrictlyInside(v, containerView)
+            );
+            return inside.filter(v =>
+                !inside.some(other =>
+                    other.name !== v.name && isStrictlyInside(v, other)
+                )
+            );
+        };
+
+        const siblings = parentName === "Main"
+            ? allViews.filter(v =>
+                !allViews.some(other =>
+                    other.name !== v.name && isStrictlyInside(v, other)
+                )
+            )
+            : (parentComp ? getDirectChildren(parentComp) : []);
         
         const m = parentName === "Main" ? this.margin : this.innerMargin;
         const w = view.variant0.width;
@@ -684,7 +727,6 @@ class SithasoLayoutEngine {
                 view.variant0.left = m;
             } else {
                 // First nested child: Parent's absolute (left, top) + margin
-                const parentComp = this._findView(this.layout.Data, parentName);
                 if (parentComp) {
                     view.variant0.top = parentComp.variant0.top + m;
                     view.variant0.left = parentComp.variant0.left + m;
@@ -721,7 +763,6 @@ class SithasoLayoutEngine {
 
         // Auto-expand parent container (if not Main)
         if (parentName !== "Main") {
-            const parentComp = this._findView(this.layout.Data, parentName);
             if (parentComp) {
                 const right = view.variant0.left + view.variant0.width + this.innerMargin;
                 const bottom = view.variant0.top + view.variant0.height + this.innerMargin;

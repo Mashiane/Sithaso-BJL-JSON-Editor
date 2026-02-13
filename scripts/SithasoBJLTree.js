@@ -36,13 +36,29 @@ class SithasoBJLTree extends HTMLElement {
         const style = document.createElement('style');
         style.textContent = `
             bjl-tree {
-                display: block;
+                display: flex;
+                flex-direction: column;
                 width: 100%;
                 height: 100%;
                 overflow: hidden;
             }
+            .tree-container {
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: hidden;
+                scrollbar-width: thin;
+                scrollbar-color: color-mix(in oklch, var(--color-base-content), transparent 70%) transparent;
+            }
+            .tree-container::-webkit-scrollbar {
+                width: 6px;
+            }
+            .tree-container::-webkit-scrollbar-thumb {
+                background-color: color-mix(in oklch, var(--color-base-content), transparent 70%);
+                border-radius: 10px;
+            }
             .tree-container .menu {
                 padding-left: 0;
+                width: 100%;
             }
             .tree-container .menu li > details > summary::after {
                 justify-self: start;
@@ -180,6 +196,8 @@ class SithasoBJLTree extends HTMLElement {
             // Convert simple LI to folder type
             const oldA = parentLi.querySelector('a');
             const content = oldA ? oldA.innerHTML : '';
+            const oldMenu = parentLi.querySelector('.smart-action-menu');
+            const menuHtml = oldMenu ? oldMenu.outerHTML : '';
             if (oldA) oldA.remove();
 
             parentLi.innerHTML = `
@@ -187,6 +205,7 @@ class SithasoBJLTree extends HTMLElement {
                     <summary>${content}</summary>
                     <ul></ul>
                 </details>
+                ${menuHtml}
             `;
             details = parentLi.querySelector('details');
         }
@@ -230,10 +249,6 @@ class SithasoBJLTree extends HTMLElement {
                 </button>
                 <button class="btn btn-ghost btn-sm btn-circle tooltip tooltip-primary tooltip-top" data-tip="Send to Back" data-action="send-to-back">
                     <i class="ri-send-to-back pointer-events-none"></i>
-                </button>
-                <div class="divider divider-horizontal mx-0 opacity-10"></div>
-                <button class="btn btn-ghost btn-sm btn-circle tooltip tooltip-error tooltip-top" data-tip="Delete" data-action="delete">
-                    <i class="ri-delete-bin-line pointer-events-none text-error"></i>
                 </button>
             </div>
         `;
@@ -326,13 +341,16 @@ class SithasoBJLTree extends HTMLElement {
     }
 
     _setupEvents() {
+        const resolveNodeId = (target) => {
+            const holder = target.closest('li[data-id], details[data-id]');
+            return holder ? holder.dataset.id : null;
+        };
+
         // Listen for clicks on nodes
         this.addEventListener('click', (e) => {
             const btn = e.target.closest('button[data-action]');
-            const li = e.target.closest('li[data-id]');
-            
-            if (!li) return;
-            const id = li.dataset.id;
+            const id = resolveNodeId(e.target);
+            if (!id) return;
 
             if (btn) {
                 e.preventDefault();
@@ -357,6 +375,20 @@ class SithasoBJLTree extends HTMLElement {
             }
         });
 
+        // Right-click anywhere on a node should open the same smart menu.
+        this.addEventListener('contextmenu', (e) => {
+            if (e.target.closest('.smart-action-menu')) return;
+            const id = resolveNodeId(e.target);
+            if (!id) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            this.select(id);
+            this.dispatchEvent(new CustomEvent('select', { detail: { id } }));
+            this._toggleSmartMenu(id, null, { x: e.clientX, y: e.clientY }, true);
+        });
+
         // Close menus on outside click or scroll
         window.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.smart-action-menu') && !e.target.closest('.btn-node-trigger')) {
@@ -367,19 +399,35 @@ class SithasoBJLTree extends HTMLElement {
         this.addEventListener('scroll', () => this._closeAllMenus(), true);
     }
 
-    _toggleSmartMenu(id, trigger) {
+    _toggleSmartMenu(id, trigger = null, position = null, forceOpen = false) {
         const menu = this.querySelector(`.smart-action-menu[data-id="${id}"]`);
         if (!menu) return;
 
         const alreadyActive = menu.classList.contains('active');
         this._closeAllMenus();
 
-        if (!alreadyActive) {
+        if (alreadyActive && !forceOpen) return;
+
+        let left = 0;
+        let top = 0;
+        if (position) {
+            left = position.x;
+            top = position.y;
+        } else if (trigger) {
             const rect = trigger.getBoundingClientRect();
-            menu.style.left = `${rect.left - 240}px`; // Centering shift
-            menu.style.top = `${rect.top - 50}px`;   // Position above
-            menu.classList.add('active');
+            left = rect.right - 210;
+            top = rect.top - 50;
         }
+
+        menu.classList.add('active');
+
+        // Keep menu inside viewport.
+        const pad = 8;
+        const menuRect = menu.getBoundingClientRect();
+        const maxLeft = Math.max(pad, window.innerWidth - menuRect.width - pad);
+        const maxTop = Math.max(pad, window.innerHeight - menuRect.height - pad);
+        menu.style.left = `${Math.min(Math.max(left, pad), maxLeft)}px`;
+        menu.style.top = `${Math.min(Math.max(top, pad), maxTop)}px`;
     }
 
     _closeAllMenus() {
